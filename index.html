@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Navigation Hub</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f4f4f9;
+        }
+        h1 {
+            color: #333;
+        }
+        .button-container {
+            display: flex;
+            gap: 15px;
+        }
+        .btn {
+            padding: 15px 25px;
+            font-size: 16px;
+            cursor: pointer;
+            text-decoration: none;
+            color: white;
+            border-radius: 8px;
+            transition: opacity 0.3s;
+        }
+        .claude { background-color: #d97757; }
+        .gemini { background-color: #4285f4; }
+        .chat   { background-color: #10a37f; }
+
+        .btn:hover {
+            opacity: 0.8;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Select a Model</h1>
+
+    <div class="button-container">
+        <a href="Claude.html" class="btn claude">Claude</a>
+        <a href="gemini.html" class="btn gemini">Gemini</a>
+        <a href="chat.html" class="btn chat">ChatGPT</a>
+    </div>
+
+</body>
+</html>

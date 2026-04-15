@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>NOIR: Killer vs. Inspector</title>
+    <style>
+        :root {
+            --bg-color: #1a1a1a;
+            --card-bg: #2d2d2d;
+            --text-color: #e0e0e0;
+            --accent-red: #8b0000;
+            --accent-blue: #2b506e;
+            --border-color: #444;
+        }
+
+        body {
+            font-family: 'Courier New', Courier, monospace;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+            touch-action: manipulation;
+        }
+
+        /* --- Pass & Play Overlay --- */
+        #overlay {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: black;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            text-align: center;
+        }
+
+        .overlay-btn {
+            padding: 20px 40px;
+            font-size: 24px;
+            background: var(--text-color);
+            color: black;
+            border: none;
+            border-radius: 8px;
+            margin-top: 20px;
+        }
+
+        /* --- Game Header --- */
+        header {
+            width: 100%;
+            padding: 10px;
+            text-align: center;
+            background: #000;
+            border-bottom: 2px solid var(--border-color);
+        }
+
+        #status-bar {
+            font-size: 1.2rem;
+            margin-bottom: 5px;
+        }
+
+        /* --- 5x5 Grid --- */
+        #board {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 8px;
+            padding: 15px;
+            width: 95vw;
+            max-width: 600px;
+            flex-grow: 1;
+        }
+
+        .card {
+            background: var(--card-bg);
+            border: 2px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            aspect-ratio: 2/3;
+            font-size: 0.9rem;
+            text-align: center;
+            position: relative;
+            border-radius: 4px;
+        }
+
+        .card.deceased {
+            background: #111;
+            color: var(--accent-red);
+            border-color: var(--accent-red);
+        }
+
+        .card.deceased::after {
+            content: "DECEASED";
+            position: absolute;
+            transform: rotate(-30deg);
+            font-weight: bold;
+            font-size: 0.8rem;
+            border: 1px solid var(--accent-red);
+            padding: 2px;
+        }
+
+        .card.exonerated {
+            border-color: #ffd700;
+        }
+
+        .card.exonerated::before {
+            content: "INNOCENT";
+            position: absolute;
+            top: 2px;
+            font-size: 0.6rem;
+            color: #ffd700;
+        }
+
+        /* --- Controls --- */
+        #controls {
+            width: 100%;
+            padding: 20px;
+            background: #000;
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+            border-top: 2px solid var(--border-color);
+        }
+
+        button {
+            padding: 15px;
+            font-size: 1rem;
+            background: var(--card-bg);
+            color: white;
+            border: 1px solid var(--border-color);
+            border-radius: 5px;
+        }
+
+        button.active {
+            background: var(--accent-blue);
+        }
+
+        /* --- Private Info Area --- */
+        #private-info {
+            position: fixed;
+            bottom: 120px;
+            background: rgba(0,0,0,0.9);
+            padding: 10px;
+            border: 1px solid #555;
+            display: none;
+            width: 80%;
+            text-align: center;
+        }
+
+    </style>
+</head>
+<body>
+
+    <div id="overlay">
+        <h1 id="overlay-msg">NOIR</h1>
+        <p id="sub-msg">Hand the device to the Killer</p>
+        <button class="overlay-btn" onclick="hideOverlay()">REVEAL TURN</button>
+    </div>
+
+    <header>
+        <div id="status-bar">Killer's Turn</div>
+        <div id="score">Kills: 0/10</div>
+    </header>
+
+    <div id="board"></div>
+
+    <div id="private-info"></div>
+
+    <div id="controls">
+        <button id="btn-peek" onmousedown="showPrivate()" onmouseup="hidePrivate()" ontouchstart="showPrivate()" ontouchend="hidePrivate()">HOLD TO PEEK ID</button>
+        <button id="btn-shift" onclick="setMode('shift')">SHIFT</button>
+        <button id="btn-action" onclick="setMode('action')">ACTION (KILL/ACCUSE)</button>
+        <button id="btn-special" onclick="handleSpecial()">SPECIAL (EXONERATE/DISGUISE)</button>
+    </div>
+
+<script>
+    const SUSPECTS = [
+        "Alyss", "Barrin", "Clive", "Deidre", "Ernest", 
+        "Franklin", "Geneva", "Horatio", "Irma", "Julian", 
+        "Kristoph", "Linus", "Marion", "Neil", "Ophelia", 
+        "Phoebe", "Quinton", "Ryan", "Simon", "Trevor", 
+        "Ulysses", "Vladimir", "Wesley", "Yvonne", "Zachary"
+    ];
+
+    let game = {
+        board: [],
+        killer: { id: "", disguise: "", kills: 0 },
+        inspector: { id: "", hand: [] },
+        turn: 'killer',
+        mode: 'none',
+        lastShift: null
+    };
+
+    function init() {
+        // Shuffle and set board
+        let deck = [...SUSPECTS].sort(() => Math.random() - 0.5);
+        game.board = deck.map(name => ({ name, status: 'alive', exonerated: false }));
+
+        // Deal roles
+        let evidence = [...SUSPECTS].sort(() => Math.random() - 0.5);
+        game.killer.id = evidence.pop();
+        game.killer.disguise = evidence.pop();
+        
+        game.inspector.id = evidence.pop();
+        game.inspector.hand = [evidence.pop(), evidence.pop(), evidence.pop()];
+
+        render();
+        showOverlay("GAME START", "Hand the device to the Killer");
+    }
+
+    function render() {
+        const boardEl = document.getElementById('board');
+        boardEl.innerHTML = '';
+        
+        game.board.forEach((card, i) => {
+            const div = document.createElement('div');
+            div.className = `card ${card.status === 'dead' ? 'deceased' : ''} ${card.exonerated ? 'exonerated' : ''}`;
+            div.innerText = card.name;
+            div.onclick = () => handleCardClick(i);
+            boardEl.appendChild(div);
+        });
+
+        document.getElementById('status-bar').innerText = `${game.turn.toUpperCase()}'S TURN`;
+        document.getElementById('score').innerText = `Kills: ${game.killer.kills}/10`;
+        
+        // Update button text based on role
+        document.getElementById('btn-action').innerText = game.turn === 'killer' ? 'KILL' : 'ACCUSE';
+        document.getElementById('btn-special').innerText = game.turn === 'killer' ? 'DISGUISE' : 'EXONERATE';
+    }
+
+    function setMode(m) {
+        game.mode = m;
+        document.querySelectorAll('#controls button').forEach(b => b.classList.remove('active'));
+        if(m === 'shift') document.getElementById('btn-shift').classList.add('active');
+        if(m === 'action') document.getElementById('btn-action').classList.add('active');
+    }
+
+    function handleCardClick(index) {
+        if (game.mode === 'shift') {
+            performShift(index);
+        } else if (game.mode === 'action') {
+            if (game.turn === 'killer') performKill(index);
+            else performAccuse(index);
+        }
+    }
+
+    function performShift(index) {
+        const row = Math.floor(index / 5);
+        const col = index % 5;
+        // Simple shift logic (example: Shift row right)
+        // In a full game, you'd add directional buttons here. 
+        // For simplicity, this button shifts the selected row right.
+        let rowData = game.board.slice(row * 5, (row * 5) + 5);
+        let last = rowData.pop();
+        rowData.unshift(last);
+        game.board.splice(row * 5, 5, ...rowData);
+        
+        endTurn();
+    }
+
+    function performKill(index) {
+        const target = game.board[index];
+        if (target.status === 'dead') return;
+        
+        target.status = 'dead';
+        game.killer.kills++;
+        
+        if (target.name === game.inspector.id) {
+            alert("KILLER WINS! You killed the Inspector.");
+            location.reload();
+        } else if (game.killer.kills >= 10) {
+            alert("KILLER WINS! 10 Suspects dead.");
+            location.reload();
+        }
+        endTurn();
+    }
+
+    function performAccuse(index) {
+        const target = game.board[index];
+        if (target.name === game.killer.id) {
+            alert("INSPECTOR WINS! Killer Captured.");
+            location.reload();
+        } else {
+            alert("False Accusation! The hunt continues.");
+            endTurn();
+        }
+    }
+
+    function handleSpecial() {
+        if (game.turn === 'killer') {
+            // Disguise Action
+            let oldId = game.killer.id;
+            game.killer.id = game.killer.disguise;
+            game.killer.disguise = oldId;
+            alert("You have switched to your disguise.");
+            endTurn();
+        } else {
+            // Exonerate Action
+            let name = game.inspector.hand.pop();
+            let card = game.board.find(c => c.name === name);
+            if (card) card.exonerated = true;
+            alert(`${name} has been exonerated.`);
+            endTurn();
+        }
+    }
+
+    function showPrivate() {
+        const el = document.getElementById('private-info');
+        el.style.display = 'block';
+        if (game.turn === 'killer') {
+            el.innerHTML = `<strong>SECRET ID:</strong> ${game.killer.id}<br><strong>DISGUISE:</strong> ${game.killer.disguise}`;
+        } else {
+            el.innerHTML = `<strong>SECRET ID:</strong> ${game.inspector.id}<br><strong>HAND:</strong> ${game.inspector.hand.join(', ')}`;
+        }
+    }
+
+    function hidePrivate() {
+        document.getElementById('private-info').style.display = 'none';
+    }
+
+    function endTurn() {
+        game.turn = game.turn === 'killer' ? 'inspector' : 'killer';
+        game.mode = 'none';
+        render();
+        showOverlay("TURN OVER", `Pass device to the ${game.turn.toUpperCase()}`);
+    }
+
+    function showOverlay(title, msg) {
+        document.getElementById('overlay').style.display = 'flex';
+        document.getElementById('overlay-msg').innerText = title;
+        document.getElementById('sub-msg').innerText = msg;
+    }
+
+    function hideOverlay() {
+        document.getElementById('overlay').style.display = 'none';
+    }
+
+    init();
+</script>
+</body>
+</html>
